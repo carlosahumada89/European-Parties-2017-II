@@ -1,6 +1,5 @@
 ---
 title: "European Parties Positions in 2017"
-subtitle: "Final Project - Applied Machine Learning"
 author: "Carlos Ahumada"
 date: "May 16, 2019"
 output:
