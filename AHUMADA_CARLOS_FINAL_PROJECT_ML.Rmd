@@ -1,0 +1,267 @@
+---
+title: "European Parties Positions in 2017"
+subtitle: "Final Project - Applied Machine Learning"
+author: "Carlos Ahumada"
+date: "May 16, 2019"
+output:
+  html_notebook:
+    toc: true 
+    toc_depth: 3  
+    theme: united  
+    highlight: tango  
+---
+
+<br>
+Since 1999 researchers from The University of North Carolina estimate party positions on European integration, ideology and policy issues for national parties in a variety of European countries through experts surveys. For this project, I am going to use the most recent one, the 2017 Chapel Hill Expert FLASH Survey (CHES). According to its [website](https://www.chesdata.eu/1999-2014-chapel-hill-expert-survey-ches-trend-file-1), this is a reduced survey that focuses on a smaller set of EU member states. The survey asks all the standard questions on EU placement, economic and social party positioning. In terms of policy issues, the survey focuses on the key questions facing Europe in 2017 -- EU economic coordination, populism, and migration. Instead of using the individual answers from experts, I am going to take the dataset that contains the mean results for each party. 
+
+# Previous analysis
+On a previous analysis (see midterm project), relevant descriptive statistics were provided for this data set. Some of the most important insights obtained were: <br>
+<br> 
+
+## Party-level conclusions
+1. There is a positive correlation between being a more traditional/authoritarian/nationalist (TAN) party than a green/authoritarian/libertarian one and supporting a restrictive policy on immigration.<br>
+2. Conservative and radical TAN parties score highest on their position supporting tougher restrictions for immigration.<br>
+3. Greens and radical left parties, are more pro-immigration.
+4. Parties that are identified as more right in economic terms tend to be restrictive regarding policy immigration. <br> 
+5. Restrictive immigration policies appear to be a general trend among European parties. <br> 
+6. Liberal, socialists, agrarian/center, green and regionalist parties have a strong and positive position towards the EU.Green parties seem to have larger differences between them on their support levels.<br>
+7. Radical TAN parties, radical left and confessional parties tend to be more anti-EU. <br> 
+8. There are two liberal (Partido Democrático Republicano (Portugal), Sloboda a Solidarita (Slovakia)), two regionalist (Democratic Unionist Party (UK), Lega Nord(Italy)) and one socialist party (Labour Party (UK)) that are considerably more anti-EU than the rest of the parties in their political family. 
+9. Parties that were part of the government in 2017 in their countries had on average more positive positions towards the EU than those which did not (with only two outliers).
+10. Parties that were part of the government in 2017 were more in favor of strengthening the restrictions on immigration than those parties that were not. 
+
+
+## Country-level conclusions
+1. Although in average German parties are more in favor of a strong restriction to immigration than parties in Spain, having a strong position towards immigration has a positive impact in vote shares in Spain. In the German case, being in favor of stronger restrictions has a small but negative effect on the votes obtained. 
+2. Despite their particular geographical positions, parties in Sweden and Italy have a similar position regarding immigration policies. However, in Sweden, the variance is higher, which indicates that there are parties there that are more in favor of lower restrictions to immigration than in Italy.
+3. In Sweden a right party in economic policy terms, is not necessarily linked to strong positions regarding immigration.
+4. In Spain, Estonia and Hungary, almost all the parties have a pro-EU position. In Estonia and Hungary there are two important outliers EKRE and Fidesz. The large spectrum covered by political parties in France, Italy and the UK might be an indication of the public opinion division regarding the EU. 
+5. In Slovakia, voters tend to look for left parties, but public opinion is inclined to strengthen the restrictions for migrants.
+6. In Portugal, voters seem to be less radical in terms of left and right positions, and seem to have a common opinion not strenghtening meassures to migrants. 
+7. Poland's citizens are divided between pro-EU and anti-EU, with a higher share for Pro-EU and right parties.
+8. In italy, the vote was splitted between three parties that clustered in a not-so-radical left right position, but that differed substantially on their opinion towards the EU. 
+
+
+# Research Questions and Methodology 
+The differences and similarities between countries and political parties captured by the descriptive statistics analysis open the door for the implementation of machine learning techniques that can perform a better classification. Thus, in this project I am going to use an unsupervised classification method to answer how do political parties cluster in terms of their ideological and political positions, as well as the shares of votes obtained. For this first question, I am going to use a Principal Component Analysis.
+
+The second research question is to find out if the variables contained in this dataset can be used to predict the voting outcomes or not. To do so, I am going to build a deep learning model using the Keras package in r.  
+
+```{r include=FALSE}
+#Packages list
+library(data.table)
+library(pastecs)
+library (GGally)
+library (dplyr)
+library (magrittr)
+library (Hmisc)
+library (corrplot)
+library(ggrepel)
+library(keras)
+library(ggplot2)
+```
+
+# Principal Component Analysis
+
+For the Principal Component Analysis I am going to keep only the variables that were of interest in the previous project (*vote*, *galtan*, *position*, *immigrate_policy*) and I am going to add an extra one: *people_vs_elite*. A two dimensional representation of these five variables, which seem to be key in the agenda, will help us see in a clearer way the differences and similarities across political parties regardless of their formal political families. 
+
+```{r include=FALSE}
+#Read Dataset using UTF-8 encoding
+eu <- read.csv("C:/Users/carlo/Desktop/Hertie/Applied Machine Learning/Midterm - EU/EU.csv", encoding="UTF-8")
+
+#Visualize structure 
+str(eu)
+
+##remove null columns
+eu <- eu [ ,colSums(is.na(eu))<nrow(eu)]
+
+#remove NA's
+eu <- eu [complete.cases(eu), ]
+
+#Removing unnecesary columns and setting rownames to parties' names
+pca_df <- eu[ , c("party", "galtan", "position", "immigrate_policy","people_vs_elite", "vote")]
+rownames(pca_df) <- c(1:125)
+
+#Finding duplicate names of parties and changing them
+pca_df$party <- as.character(pca_df$party)
+str(pca_df)
+which(duplicated(pca_df$party))
+pca_df [68,1] <- "PS_Por"
+pca_df [83,1] <- "FI_Swe"
+pca_df [91,1] <- "SPD_cz"
+pca_df [94,1] <- "EK_est"
+
+#Set rownames as parties' names
+rownames(pca_df) <- pca_df$party
+pca_df$party <- NULL
+```
+Before applyin the PCA we have to be sure that the means and variances are relatively similar. Otherwise, a standarization process (mean zero and std. deviation one) is in place. 
+```{r}
+#Checking means
+apply(pca_df , 2, mean)
+```
+
+```{r}
+#Checking variance
+apply(pca_df, 2, var)
+```
+It can be clearly seen that vote has the largest variance of the five variables. If we do not standarize, this variable will be the one explaining most of the variance by far compared to the others, which would be misleading. For so, in the application of the PCA function shown below, scale is set to true. 
+ 
+```{r}
+#Building PCA model
+pr.out=prcomp(pca_df, scale=TRUE)
+pr.out$rotation
+```
+ 
+The table above is the rotation matrix, and provides the principal components loadings. Each column contains the corresponding principal component loading vector. 
+
+```{r}
+col=c("SkyBlue", "Orange")
+cex = c(.6,.9)
+biplot (pr.out,col=col, scale =0, cex = cex, xlim=c(-3,2), ylim=c(-2.5,2))
+```
+
+## Biplot and Loading Vectors Interpretation
+In the graph above, it can be seen that PC1 places very similar weights to immigrate policy and galtan (~ -0.6), and to vote and people_vs_elite (~ -0.11). Position has a different value from the two pairs just mentioned (~ 0.5). This can be corroborated in the rotation matrix. PC2 also asigns similar values to immigrate policy and galtan (~ 0.2), but now creates a new pair: vote and position (~ 0.45). Finally, people_vs_elite is the variable with the most distinct weight in PC2 ( ~0.7). 
+
+Here, the second component (PC2) can be taken as a general measure of the position of political parties regarding direct representation (ie, referendums), whereas PC1 puts little weight on vote an people_vs_elite and more on the positions of interest (migration, economy, and position towards the EU.) Moreover, it is interesting to see that imigrate policy and galtan have almost the same weights in both components. 
+
+
+## Political Parties Interpretation
+By analyzing the position of parties with respect oF PC1 we see a clear difference between conservative right parties like PiS, Fidesz, FvD, PVV, EKRE and others occupying the very left side of the biplot. These parties are the ones who have a traditional/authoritarian position regarding democratic freedoms and rights, and at the same time have a strong position against the EU. However, these parties differ a lot on their means to excercise power. For example, while Fidesz and PiS promote representative democracy, others like PVV and FvD are much more in favor of direct democracy (ie, referendums). 
+
+On the other extreme, we see the green parties, Potami, PIRAT, TR, DK and others as parties that are more in favor of the EU, more libertarian and less restrictive when it comes to migration. However, they also differ in regards to direct vs. representative democracies. Between these two extremes, we see all the Christian-Democratic parties: CDS-PP, CU, CDU, CDU-PCP, CSSD, and some others, interestingly some socialist/communist parties. 
+
+In general, this plot shows that all political views, positions, and degrees are relatively well distributed across Europe. However, there are more parties with a pro-EU position than with an anti-position and these parties are more voted than anti-EU parties. Also, more parties supporting direct rather than to representative democracies can be identify, even though the difference is not that large, and it is rather a well distributed feature.  
+
+```{r echo=FALSE}
+biplot(pr.out, expand=10, xlim=c(.9, 1.5), ylim=c(.5, 3), col=col, scale =0, cex = c(.9,.8))
+```
+
+The plot above zooms in to the most liberatarian, pro-EU, less restrictive in terms of migration, pro-representative democracy, and relatively high voted parties in Europe. 
+
+```{r echo=FALSE}
+biplot(pr.out, expand=10, xlim=c(-3.5, -2.4), ylim=c(-2.5, -1.7), col=col, scale =0, cex = c(.9,.8))
+```
+The plot above zooms in to the most authoritarian, anti-EU, more in favor of restrictive migration laws, pro-direct democracy, and relatively low voted parties in Europe.
+
+# Deep Learning model to predict voting outcomes
+For the second part of the project, I am going to use a deep learning model using the Keras package. The purpose of this is to explore new ways to predict voting outcomes, moving away from traditional forecasting methods. The benefits and limitations of it will be discussed in the next section. <br>
+<br>
+To  build up the model, only the numeric variables of the complete dataset were taken into account (the parties' positions regarding topics and ideological stand). The outcome variable is the share of votes obtained in the selected election (either 2014, 2015, 2016 or 2017). The variables were normalized for a better and easier interpretation of them by the model. 
+
+```{r include=FALSE}
+#New data set
+dl_df <- eu[ , -c(1,2,3,4,5,8,9,10)]
+dl_df$seat <-NULL
+
+#Splitting dataset
+train_index <- sample(1:nrow(dl_df), 0.8 * nrow(dl_df))
+test_index <- setdiff(1:nrow(dl_df), train_index)
+# Build X_train, y_train, X_test, y_test
+X_train <- as.matrix(dl_df[train_index, -1])
+y_train <- as.matrix(dl_df[train_index, 1])
+X_test <- as.matrix(dl_df[test_index,  -1])
+y_test <- as.matrix(dl_df[test_index, 1])
+
+#Normalizing
+mean<- apply(X_train, 2, mean)
+std <- apply(X_train, 2, sd)
+X_train <- scale(X_train, center=mean, scale = std)
+X_test <- scale(X_test, center=mean, scale = std)
+```
+
+For the model, I am going to use two dense layers of 64 nodes each, and a final layer, which activation is set to linear. In this way, the final output will be a prediction of the share of votes.
+
+```{r eval=FALSE}
+#Construction of the model
+model <- keras_model_sequential() 
+model %>% 
+  layer_dense(units = 64, activation = 'relu', kernel_initializer='RandomNormal', input_shape = dim(X_train)[2]) %>%
+  layer_dense (units = 64, activation = 'relu') %>%
+  layer_dense(units = 1, activation = 'linear')
+summary(model)
+
+#Compiling the model using Gradient Descent 
+model %>% compile(
+  loss = 'mse',
+  optimizer = 'rmsprop',
+  metrics = c('mae')
+)
+
+#Fitting the model
+history <- model %>% fit(
+  X_train, y_train, 
+  epochs = 150, batch=25,
+  validation_split = 0.2
+)
+```
+
+```{r}
+#Plotting the mean absolute error per epoch 
+plot(history, metrics = "mean_absolute_error", smooth = FALSE)+
+  coord_cartesian() 
+```
+
+The plot above shows that the model has a mean absolute error below 5 in the validation set. It is worth noticing how after epoch 20, the model starts to overfit. This is the case, in part, due to the low number of obervations. Now let's evaluate the model in the test set to assess its real acurracy. 
+
+```{r}
+c(loss, mae) %<-% (model %>% evaluate(X_test, y_test, verbose = 0))
+paste0("Mean absolute error on test set: ", sprintf("%.2f", mae))
+```
+The model presents a mean absolute error on the test set of 5.58. Given the small size of the sample, we ended up with a small validation set. In this scenario, the validation scores would tend to change depending on which observations are taken for training, and which are taken for validation. Therefore, it is important to do a k-fold cross-validation. This process consists on splitting the available data into K partitions.  
+
+```{r}
+###Setting k-fold validation
+k <- 4
+indices <- sample(1:nrow(X_train))
+folds <- cut(1:length(indices), breaks = k, labels=F)
+
+num_epochs <- 100
+all_scores <- c()
+for (i in 1:k) {
+  cat("processing fold#", i, "\n")
+  val_indices <- which(folds==1, arr.ind = T)
+  val_data <- X_train [val_indices, ]
+  val_targets <- y_train [val_indices]
+  
+  partial_train_data <- X_train [ -val_indices, ]
+  partial_train_targets <- y_train [ -val_indices]
+  
+  model %>% fit(partial_train_data, partial_train_targets, 
+                epochs=num_epochs, batch_size = 1, verbose = 0)
+  results <- model %>% evaluate (val_data, val_targets, verbose=0)
+  all_scores <- c(all_scores, results$mean_absolute_error)
+  
+}
+
+mean(all_scores)
+```
+With a k-fold validation, the mean absolute error drops to 4.87. This means that with our model and the particular data that we used to train it, we could predict the share of votes that a party would obtain and be off, in average, by 4.87% of the share of votes. Although this number might seem low, a difference of 5% on the ballots might be decisive. 
+
+# Discussion and conclusions
+
+## PCA analysis
+Machine learning techniques such as PCA, can be useful to identify parties' positions in regards to important topics in the agenda. Particularly, PCA provides an excellent (and fairly intuitive) visualization on the positions of parties taking into account different positions at the same time. Nowadays, with the amount of information and the speed with which it comes, it is hard for citizens and voters to actually identify which are the stands of the parties in multiple topics at the same time. If it is already hard for voters to identify the positions of one party across several topics, its even harder for them to compare the different parties in terms of their positions. Providing voters with this kind of charts and information, would empower them. With these tools, voters could have more clarity on who are they voting for and can demand more accountability from their representatives once in power. 
+
+## Deep learning model
+The application of deep learning techniques to social sciences is still very new. This opens the door for exploration and testing. In this project, it was shown that deep learning can be useful to predict voting outcomes for European parties based on their positions towards sensitive topics such as migration, pro/anti-EU, budget, economic policy, and others. Even though the mean absolute error was relatively small, a 5% change in the voting share might define an election. Nevertheless, this model has limitations. For example, the data was trained for different years, in different countries. For so, if we would like to predict the share of votes in the next elections only based on this model, the acurracy would drop, since political events and economic circumstances evolve. This might change what the majority of people think and want regarding certain topic. In any case, it is a good example on how deep learning might be helpful for political science. It is worth metnioning that in a near future, this kind of models can imporve with more and better data. 
+
+
+## Ethics 
+At the begining of his book "The Signal and the Noise", Nate Silver says that "...before we demand more of our data, we need to demand more of ourselves". This phrase is important to have it in mind at all times. A good data scientist or professional working with numbers must be critical of the kind of information she is working with and the patterns that are coming out from it. In the case of the PCA analysis, the classification of parties and their positions is made by aggregating the subjective opinion of experts and scholars about them. No matter how well educated the assessment or guesses are, people have biases and might interpret a public declaration or written manifesto in different ways. For example, what might appear as very anti-EU stand for one expert, it might appear as a moderated one for another. If we provide charts like the one generated by this project's PCA analysis, we have to be aware of its bias due to the personal stands of the experts who are classifying the parties. On the other hand, this problem can be curved by increasing the number of experts and diversity among the group. Moreover, since the information shared in the news and communication channels regarding political parties is already biased, this type of charts can be offered as a new source of information, increasing transparency, engagement and accountability. 
+
+Finally, regarding the deep learning model, since it was based on the same dataset, the potential ethical issues are the same. However, there are some additional concerns that might be worth mentioning. If models like this evolve and get better, political parties might be able do calculations on which political stands would yield more votes. Thus, political parties might be tempted to modify their stands to perform better in the ballots, regardless of what their core voters are asking from them. Although parties can be regarded as rational entities who survival and power depend on the number of votes, this should not dictate their core values. Minorities could eventually become even less represented, and ideological opposition among parties might become diluted. This effect would be bad for democracies; specially in a moment in which its own foundations are already being constanly challenged. 
+
+
+
+
+
+
+
+
+
+
+
+
+
